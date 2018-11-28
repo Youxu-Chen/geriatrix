@@ -9,6 +9,9 @@
 
 #include "geriatrix.h"
 
+#define DEBUG_YOUXU
+std::string tag = "[DEBUG_YOUXU] ";
+
 #ifdef NEED_POSIX_FALLOCATE
 /*
  * fake posix_fallocate by ftruncating the file larger and touching
@@ -70,6 +73,9 @@ static struct backend_driver *g_backend = &posix_backend_driver;
  * ret 0 on sucess, -1 on error (errno set by mkdir).
  */
 static int mkdir_path(const char *path, mode_t mode) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "mkdir_path " << path << std::endl;
+  #endif
   char *pcopy, *slash;
   mode_t parentmode;
   int done, olderrno, rv;
@@ -117,6 +123,9 @@ static int mkdir_path(const char *path, mode_t mode) {
 }
 
 void issueCreate(const char *path, size_t len) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "issueCreate " << path << " len " << len << std::endl;
+  #endif
   int fd, rv = 1;
   fd = g_backend->bd_open(path, O_RDWR|O_CREAT, 0600);
   assert(fd > -1);
@@ -155,6 +164,9 @@ void issueAccess(const char *path) {
 }
 
 void issueDelete(const char *path) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "issueDelete " << path << std::endl;
+  #endif
   int rv;
   issueAccess(path);
   rv = g_backend->bd_unlink(path);
@@ -255,6 +267,9 @@ flat_map<std::string, SizeBucket, BucketCompare> *size_buckets;
 flat_map<std::string, DirBucket, BucketCompare> *dir_buckets;
 
 void readDistribution(void *input, distribution_type_t type) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "readDistribution()" << std::endl;
+  #endif
   int count = 0;
   struct dir *d = NULL;
   struct age *a = NULL;
@@ -273,6 +288,12 @@ void readDistribution(void *input, distribution_type_t type) {
                    infile >> d->distribution[i];
                    infile >> d->subdir_arr[i];
                  }
+
+                 #ifdef DEBUG_YOUXU
+                 std::cout << tag << "readDistribution DIRS:NUM_DIRS " << NUM_DIRS << std::endl;
+                 for (int i = 0; i < NUM_DIRS; ++i)
+                   std::cout << tag << "readDistribution DIRS:arr " << d->arr[i] << " distribution " << d->distribution[i] << " subdir_arr " << d->subdir_arr[i] << std::endl;
+                 #endif
                } break;
 
     case SIZES: {
@@ -292,6 +313,12 @@ void readDistribution(void *input, distribution_type_t type) {
                       s->cutoffs[i] = s->cutoffs[i-1] + s->distribution[i];
                     }
                   }
+
+                  #ifdef DEBUG_YOUXU
+                  std::cout << tag << "readDistribution SIZES:NUM_SIZES " << NUM_SIZES << std::endl;
+                  for (int i = 0; i < NUM_SIZES; ++i)
+                    std::cout << tag << "readDistribution SIZES:arr " << s->arr[i] << " distribution " << s->distribution[i] << " cutoffs " << s->cutoffs[i] << std::endl;
+                  #endif
                 } break;
 
     case AGES: {
@@ -305,11 +332,19 @@ void readDistribution(void *input, distribution_type_t type) {
                    infile >> a->cutoffs[i];
                    infile >> a->distribution[i];
                  }
+                 #ifdef DEBUG_YOUXU
+                  std::cout << tag << "readDistribution AGES:NUM_AGES " << NUM_AGES << std::endl;
+                  for (int i = 0; i < NUM_AGES; ++i)
+                    std::cout << tag << "readDistribution AGES:cutoffs " << a->cutoffs[i] << " distribution " << a->distribution[i] << std::endl;
+                  #endif
                } break;
   }
 }
 
 void init(struct age *a_grp, struct size *s_grp, struct dir *d_grp) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "init()" << std::endl;
+  #endif
   int i, j, k;
   readDistribution(a_grp, AGES);
   readDistribution(s_grp, SIZES);
@@ -327,6 +362,10 @@ void init(struct age *a_grp, struct size *s_grp, struct dir *d_grp) {
   for(i=0; i<NUM_DIRS; i++) {
     total_dir_weight += d_grp->distribution[i];
   }
+
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "init total_age_weight " << total_age_weight << " total_size_weight " << total_size_weight << " total_dir_weight " << total_dir_weight << std::endl;
+  #endif
 
   size_buckets = new flat_map<std::string, SizeBucket, BucketCompare>;
   for(i=0; i<NUM_SIZES; i++) {
@@ -604,7 +643,7 @@ size_t createFile(int size_arr_position, struct age *a_grp, struct size *s_grp,
   /*
    * In this function, we need to do the following tasks:
    *
-   * 1. find what size file we need to create.
+   * 1. find what size we need to create
    * 2. find the dir depth we have to create it at
    * 3. create a file of that size.
    * 4. increment global_live_file_count
@@ -615,6 +654,10 @@ size_t createFile(int size_arr_position, struct age *a_grp, struct size *s_grp,
    *
    * IMPORTANT: order of the steps is necessary.
    */
+
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "createFile()" << std::endl;
+  #endif
 
   // step 1
   SizeBucket sb(0, 0, s_grp->arr);
@@ -653,6 +696,9 @@ size_t createFile(int size_arr_position, struct age *a_grp, struct size *s_grp,
   }
   snprintf(name, PATH_MAX, "%s/%s%" PRIu64, d.prefix.c_str(),
            sibling_dir.c_str(), tick);
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "createFile " << name << " size " << sb.size << std::endl;
+  #endif
   File *f = new File(name, sb.size, tick, d.depth); // step 2
   auto retval = f->createFile();
   assert(retval == 0);
@@ -856,6 +902,9 @@ uint64_t calculateT(struct age *a_grp) {
 
 int performOp(bool create, int size_arr_position,
     int idle_injections, struct age *a, struct size *s, struct dir *d) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "performOp()" << std::endl;
+  #endif
   tick++;
   int create_succeeded = 0;
   if(create) {
@@ -873,10 +922,18 @@ int performOp(bool create, int size_arr_position,
 
 int performRapidAging(size_t till_size, int idle_injections,
     struct age *a, struct size *s, struct dir *d) {
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "performRapidAging()" << std::endl;
+  #endif
   boost::random::mt19937 gen{static_cast<std::uint64_t>(total_size_weight)};
   boost::random::uniform_int_distribution<std::uint64_t> dist{1,
     static_cast<std::uint64_t>(total_size_weight)};
+
   while(live_data_size < till_size) {
+    #ifdef DEBUG_YOUXU
+    std::cout << tag << "performRapidAging till_size " << till_size << " live_data_size " << live_data_size
+ << std::endl;
+    #endif
     auto rand = dist(gen);
     int j = 0;
     while(rand > s->cutoffs[j]) {
@@ -893,6 +950,10 @@ int performRapidAging(size_t till_size, int idle_injections,
 
 int performStableAging(size_t till_size, int idle_injections,
     struct age *a, struct size *s, struct dir *d, int runs) {
+
+  #ifdef DEBUG_YOUXU
+  std::cout << tag << "performStableAging()" << std::endl;
+  #endif
   auto future_tick = calculateT(a);
   reAge(a, future_tick);
   int confidence_met = 0;
@@ -1075,6 +1136,7 @@ int main(int argc, char *argv[]) {
   srand(seed);
 
   init(&a, &s, &d); // initialize the data structures for aging
+  
   if(confidence > 0.0) {
     // initialize the chi-squared value for accuracy comparison.
     dist = new boost::math::chi_squared(NUM_AGES - 1);
@@ -1083,6 +1145,7 @@ int main(int argc, char *argv[]) {
   pool = new ThreadPool(concurrency);
   performRapidAging(total_disk_capacity * utilization, idle_injections,
       &a, &s, &d);
+
   K = tick;
   struct sigaction sigIntHandler;
 
